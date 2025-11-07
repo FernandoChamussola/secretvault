@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  db:
+    image: mariadb:11
+    container_name: secrets-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: secrets_vault
+      MYSQL_USER: secrets_user
+      MYSQL_PASSWORD: ${DB_PASSWORD:-dbpassword}
+    volumes:
+      - db-data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - secrets-network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: secrets-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: secrets_vault
+      DB_USER: secrets_user
+      DB_PASSWORD: ${DB_PASSWORD:-dbpassword}
+      JWT_SECRET: ${JWT_SECRET:-change-this-jwt-secret-in-production}
+      MASTER_KEY: ${MASTER_KEY}  # CRITICAL: Must be provided via .env or docker secret
+      MASTER_KEY_FILE: /run/secrets/master_key  # Alternative: use docker secret
+    secrets:
+      - master_key
+    volumes:
+      - ./backend/logs:/app/logs
+    networks:
+      - secrets-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    container_name: secrets-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://nginx/api
+    networks:
+      - secrets-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: secrets-nginx
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-cache:/var/cache/nginx
+    networks:
+      - secrets-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  secrets-network:
+    driver: bridge
+
+volumes:
+  db-data:
+  nginx-cache:
+
+secrets:
+  master_key:
+    file: ./secrets/master_key.txt  # Create this file with your master key
