@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  cofrekeys-db:
+    image: postgres:15-alpine
+    container_name: cofrekeys-db
+    restart: unless-stopped
+    networks:
+      - traefik-public
+    environment:
+      POSTGRES_USER: cofrekeys
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: cofrekeys
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cofrekeys"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  cofrekeys-api:
+    build: ./backend
+    container_name: cofrekeys-api
+    restart: unless-stopped
+    networks:
+      - traefik-public
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://cofrekeys:${DB_PASSWORD}@cofrekeys-db:5432/cofrekeys
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      PORT: 3000
+      FRONTEND_URL: https://cofrekeys.duckdns.org
+    depends_on:
+      cofrekeys-db:
+        condition: service_healthy
+    command: sh -c "npx prisma migrate deploy && npm start"
+
+  # Frontend
+  cofrekeys-frontend:
+    build: ./frontend
+    container_name: cofrekeys-frontend
+    restart: unless-stopped
+    networks:
+      - traefik-public
+    depends_on:
+      - cofrekeys-api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cofrekeys.rule=Host(`cofrekeys.duckdns.org`)"
+      - "traefik.http.routers.cofrekeys.entrypoints=websecure"
+      - "traefik.http.routers.cofrekeys.tls.certresolver=letsencrypt"
+      - "traefik.http.services.cofrekeys.loadbalancer.server.port=80"
+
+volumes:
+  postgres-data:
+
+networks:
+  traefik-public:
+    external: true
