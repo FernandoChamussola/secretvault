@@ -6,13 +6,16 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install --production
+RUN npm install
 
-# Copy source code
-COPY . .
+# Copy Prisma schema first
+COPY src/prisma ./src/prisma
 
 # Generate Prisma Client
-RUN npx prisma generate
+RUN npx prisma generate --schema=./src/prisma/schema.prisma
+
+# Copy rest of source code
+COPY . .
 
 # Expose port
 EXPOSE 3000
