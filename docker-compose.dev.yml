@@ -1,0 +1,49 @@
+services:
+  mysql:
+    image: mysql:8
+    container_name: cofrekeys-mysql-dev
+    restart: unless-stopped
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: cofrekeys
+      MYSQL_USER: cofrekeys
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data-dev:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./backend
+    container_name: cofrekeys-api-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      DB_HOST: mysql
+      DB_USER: cofrekeys
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      DB_NAME: cofrekeys
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 3000
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: cofrekeys-frontend-dev
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
+volumes:
+  mysql-data-dev:
