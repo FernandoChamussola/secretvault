@@ -1,11 +1,10 @@
+# Docker Compose for local development without Traefik
 services:
   # PostgreSQL Database
   cofrekeys-db:
     image: postgres:15-alpine
     container_name: cofrekeys-db
     restart: unless-stopped
-    networks:
-      - cofrekeys-network
     environment:
       POSTGRES_USER: cofrekeys
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -25,15 +24,13 @@ services:
       dockerfile: Dockerfile
     container_name: cofrekeys-api
     restart: unless-stopped
-    networks:
-      - cofrekeys-network
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://cofrekeys:${DB_PASSWORD}@cofrekeys-db:5432/cofrekeys
       JWT_SECRET: ${JWT_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       PORT: 3000
-      FRONTEND_URL: ${FRONTEND_URL:-https://cofrekeys.duckdns.org}
+      FRONTEND_URL: http://localhost
     depends_on:
       cofrekeys-db:
         condition: service_healthy
@@ -46,25 +43,10 @@ services:
       dockerfile: Dockerfile
     container_name: cofrekeys-frontend
     restart: unless-stopped
-    networks:
-      - cofrekeys-network
-      - traefik-public
+    ports:
+      - "80:80"
     depends_on:
       - cofrekeys-api
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.cofrekeys.rule=Host(`cofrekeys.duckdns.org`)"
-      - "traefik.http.routers.cofrekeys.entrypoints=websecure"
-      - "traefik.http.routers.cofrekeys.tls.certresolver=letsencrypt"
-      - "traefik.http.services.cofrekeys.loadbalancer.server.port=80"
-      - "traefik.docker.network=traefik-public"
 
 volumes:
   postgres-data:
-
-networks:
-  cofrekeys-network:
-    driver: bridge
-  traefik-public:
-    external: true
-    name: traefik-public
